@@ -1,5 +1,6 @@
-/*
- * TODO:
+/**
+ * "Borrowed code":
+ * https://github.com/mikalhart/TinyGPSPlus/blob/master/examples/FullExample/FullExample.ino
 */
 
 // define pins + constants
@@ -11,10 +12,8 @@
 #define BUTTON2 8
 #define POT A1
 
-#define NUM_LEDS 12
-#define BRIGHTNESS 40 
-
-#define WID 16
+// Width and height of LCD
+#define WID 16 
 #define HEI 2
 
 #define SMDELAYTIME 2000 // total delay = SMDELAYTIME + 1 sec
@@ -35,10 +34,9 @@ TinyGPSPlus gps;
 File f;
 
 // for adjusting to my time zone
-// put in flash memory
 TimeChangeRule usPST = {"PST", First, Sun, Nov, 2, -480}; // pacific standard time (winter) UTC-8
 TimeChangeRule usPDT = {"PDT", Second, Sun, Mar, 2, -420}; // pacific daylight time (summer) UTC-7
-Timezone usPacific(usPDT, usPST); // this will not be constant bc of daylight savings
+Timezone usPacific(usPDT, usPST); // time offset will not be constant bc of daylight savings
 time_t pacific;
 
 byte unit; // 0 = mph, 1 = kph, 2 = m/s
@@ -85,7 +83,6 @@ void setup(void){
 void loop(void){
     readButtons(); // read states of buttons
     
-    // set first to true
     first = true;
     
     // if first button pressed, change the tracking state to start if stopped and to stop if started
@@ -119,10 +116,8 @@ void loop(void){
           
             byte _h, _m, _s, _mth, _d;
             int _y;
-//            Serial.println("new file");
             if (getCurTime(_h, _m, _s, _y, _mth, _d)){
                 // if time is valid then set the filename to the start date and time
-//                digitalWrite(ERRPIN, LOW);
                 fileName = "";
                 fileName += String(_y) ;
                 fileName += "-";
@@ -136,7 +131,6 @@ void loop(void){
                 fileName += ":";
                 fileName += String(_s);
             } else {
-//                digitalWrite(ERRPIN, HIGH);
                 fileName = "INVALID";  
             }
         }
@@ -174,13 +168,6 @@ void loop(void){
     if (!getCurSpeed(speedmph, speedkph, speedmps)){
         mult *= 3;  
     }
-
-//    Serial.print("mult test ");
-//    Serial.print(mult);
-//    Serial.print(" ");
-//    Serial.print(curhr);
-//    Serial.print(" ");
-//    Serial.println(curmin);
 
     // display those onto LCD
     switch(unit){
@@ -268,8 +255,8 @@ void readButtons(void){
 }
 
 // This custom version of delay() ensures that the tinyGPS object
-// is being "fed". From the TinyGPS++ examples. 
-// "Borrowed" from SparkFun at https://learn.sparkfun.com/tutorials/gps-logger-shield-hookup-guide/example-sketch-tinygps-serial-streaming
+// is being "fed". From the TinyGPS++ examples at
+// https://github.com/mikalhart/TinyGPSPlus/blob/master/examples/FullExample/FullExample.ino  
 static void smartDelay(uint16_t ms) // I am only delaying for at most 10000 ms
 {
     unsigned long start = millis();
@@ -359,7 +346,6 @@ bool getCurTime(byte& _h, byte& _m, byte& _s, int& _y, byte& _mth, byte& _d){
 
 // get current position
 bool getCurPos(void){
-//    Serial.println("b" + String(ss.available()) + " " + String(gps.location.isValid()));
     if (ss.available() && gps.location.isValid()){
         latitude = gps.location.lat();
         longitude = gps.location.lng();  
@@ -388,7 +374,6 @@ void writeToFile(byte code){
             f.print(latitude);
             f.print(",");
             f.println(longitude);
-//            f.println(String(c.latitude) + "," + String(c.longitude));
         } 
         else if (code == 20){
             f.println("PAUSE");  
@@ -481,6 +466,7 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
         lcd.print("  NO TIME INFO  ");
     }
 
+    // if there is a speed error print onto LCD
     if (_b == 3 || _b == 6){
         lcd.setCursor(WID-8, 1);
         lcd.print("ERROR");
@@ -488,7 +474,6 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
         lcd.setCursor(WID-10, 1);
         lcd.print("      ");
         lcd.setCursor(WID-3-(calcLen((int) floor(_curspeed))), 1);
-//        Serial.println((int) floor(_curspeed));
         lcd.print((int) floor(_curspeed));
     }
     lcd.setCursor(WID-3, 1);
