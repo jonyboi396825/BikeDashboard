@@ -43,7 +43,6 @@ time_t pacific;
 
 byte unit; // 0 = mph, 1 = kph, 2 = m/s
 const char units[3][4] = {"mph", "kph", "m/s"}; // stores string of unit at the corresponding index, takes less emory
-String h, m; // strings of hr, min, and speed for lcd display
 byte curhr, curmin; // cur hour and min to get from GPS
 byte trackingState; // 0 = not tracking, 1 = tracking, 2 = paused
 String fileName; // current file name
@@ -51,16 +50,13 @@ unsigned long startMillis; // startMillis to track seconds
 
 float speedmph, speedkph, speedmps; // stores speed
 // stores current position
-float latitude;
-float longitude; 
+float latitude, longitude; 
  
 bool state1, state2; // variables for 1st and 2nd button states respectively
 bool prevs1, prevs2; // stores previous states of buttons
 bool first = true; // makes sure to print "DISCONNECTED" only once
 bool first2; // for creating files
 bool first3 = true; // for disconnected when pos not accurate
-
-int me = 0; // <-- test variable, remove
 
 // setup
 void setup(void){
@@ -189,13 +185,13 @@ void loop(void){
     // display those onto LCD
     switch(unit){
         case 0:
-            updateDisplay(true, curhr, curmin, mult, speedmph);
+            updateDisplay(true, curhr, curmin, mult, speedmph, t3, t4);
             break;
         case 1:
-            updateDisplay(true, curhr, curmin, mult, speedkph);
+            updateDisplay(true, curhr, curmin, mult, speedkph, t3, t4);
             break;
         case 2:
-            updateDisplay(true, curhr, curmin, mult, speedmps);
+            updateDisplay(true, curhr, curmin, mult, speedmps, t3, t4);
             break;
     }
 
@@ -224,7 +220,7 @@ void loop(void){
             }
             first = false;
         }
-        updateDisplay(false, 0, 0, 0, 0.0);
+        updateDisplay(false, 0, 0, 0, 0.0, 0, 0);
     }
 }
 
@@ -410,57 +406,92 @@ void writeToFile(byte code){
 }
 
 // prints data onto LCD
-void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed){
+void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, byte _d){
     // (hour, minute, code, speed) 
     // if _b == 3, curspeed has an error
     // if _b == 2, time has an error
     // if _b == 6, curspeed and time have errors
     // curspeed will be given in the wanted unit  
 
-    // if not available, print "error" and return
+    // if not available, print "not available" and return
     if (!_av){
         lcd.setCursor(0, 0);
         lcd.print(" NOT AVAILABLE  ");
+        lcd.setCursor(0, 1);
+        lcd.print("                ");
         return;
-    }
-    
-    // add 0 if _h has only one digit
-    if (_h/10 == 0){
-        h = "0" + String(_h);
-    } else{
-        h = String(_h);
-    }
-
-    // add 0 if _m has only one digit
-    if (_m/10 == 0){
-        m = "0" + String(_m);  
-    } else{
-        m = String(_m);  
     }
 
     // print time onto screen only if time is accurate
     if (_b != 2 && _b != 6){
+        // print date
         lcd.setCursor(0, 0);
-        lcd.print("Time: " + h + ":" + m + "     ");
-    } else{
+        if (calcLen(_mo) == 1){ // add 0 in front if month is single digit
+            lcd.print('0');
+            lcd.setCursor(1, 0);
+            lcd.print(_mo);
+        } else{
+            lcd.print(_mo);  
+        }
+
+        // print dash
+        lcd.setCursor(2, 0);
+        lcd.print('-');
+        lcd.setCursor(3, 0);
+        
+        if (calcLen(_d) == 1){ // add 0 in front if day is single digit
+            lcd.print('0');
+            lcd.setCursor(4, 0);
+            lcd.print(_d);
+        } else{
+            lcd.print(_d);  
+        }
+
+        // print spaces
+        lcd.setCursor(5, 0);
+        for (int i = 0; i < WID-10; i++){
+            lcd.setCursor(i+5, 0);
+            lcd.print(' ');
+        }
+
+        // print time
+        lcd.setCursor(WID-5, 0);
+        if (calcLen(_h) == 1){ // add 0 in front if hour is single digit
+            lcd.print('0');
+            lcd.setCursor(WID-4, 0);
+            lcd.print(_h);  
+        } else{
+            lcd.print(_h);  
+        }
+
+        // print time colon
+        lcd.setCursor(WID-3, 0);
+        lcd.print(':');
+        lcd.setCursor(WID-2, 0);
+
+        if (calcLen(_m) == 1){ // add 0 in front if min is single digit
+            lcd.print('0');
+            lcd.setCursor(WID-1, 0);
+            lcd.print(_m);
+        } else{
+            lcd.print(_m);  
+        }
+    } else{ // if not valid, print "NO INFO"
         lcd.setCursor(0, 0);
-        lcd.print("Time: NO INFO   ");
+        lcd.print("  NO TIME INFO  ");
     }
 
-    // print speed onto screen
-    lcd.setCursor(0, 1);
-    lcd.print("Speed:");
     if (_b == 3 || _b == 6){
         lcd.setCursor(WID-8, 1);
         lcd.print("ERROR");
     } else{
-        lcd.setCursor(6, 1);
+        lcd.setCursor(WID-10, 1);
         lcd.print("      ");
         lcd.setCursor(WID-3-(calcLen((int) floor(_curspeed))), 1);
 //        Serial.println((int) floor(_curspeed));
         lcd.print((int) floor(_curspeed));
     }
-    lcd.setCursor(13, 1);
+    lcd.setCursor(WID-3, 1);
     lcd.print(units[unit]);
 
 }
