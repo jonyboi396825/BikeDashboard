@@ -1,4 +1,5 @@
 {
     "board": "arduino:avr:uno",
-    "programmer": "arduino:avrisp"
+    "programmer": "arduino:avrisp",
+    "sketch": "BikeDashboard.ino"
 }
