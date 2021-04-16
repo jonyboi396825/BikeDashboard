@@ -1,0 +1,29 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "/Applications/Arduino.app/Contents/Java/tools/**",
+                "/Users/jonathanliu/Documents/Arduino/libraries/**",
+                "/Applications/Arduino.app/Contents/Java/libraries/**",
+                "/Applications/Arduino.app/Contents/Java/hardware/tools/**",
+                "/Applications/Arduino.app/Contents/Java/hardware/arduino/avr/**",
+                "/Users/jonathanliu/Library/Arduino15/packages/arduino/tools/**",
+                "/Users/jonathanliu/Documents/Arduino/libraries/LiquidCrystal_I2C/**",
+                "/Users/jonathanliu/Library/Arduino15/packages/arduino/hardware/mbed/1.1.1/cores/arduino/mbed/drivers/**"
+            ],
+            "forcedInclude": [
+                "/Applications/Arduino.app/Contents/Java/hardware/arduino/avr/cores/arduino/Arduino.h"
+            ],
+            "defines": [],
+            "macFrameworkPath": [
+                "/Library/Developer/CommandLineTools/SDKs/MacOSX10.15.sdk/System/Library/Frameworks"
+            ],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c11",
+            "cppStandard": "c++98",
+            "intelliSenseMode": "macos-clang-x64"
+        }
+    ],
+    "version": 4
+}
