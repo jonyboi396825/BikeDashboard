@@ -1,4 +1,6 @@
 /**
+ * This code is kind of messy but it works
+ * 
  * "Borrowed code":
  * https://github.com/mikalhart/TinyGPSPlus/blob/master/examples/FullExample/FullExample.ino
 */
@@ -16,7 +18,7 @@
 #define WID 16 
 #define HEI 2
 
-#define SMDELAYTIME 2000 // total delay = SMDELAYTIME + 1 sec
+#define SMDELAYTIME 500 // total delay = SMDELAYTIME + 1 sec
 
 // include
 #include <LiquidCrystal_I2C.h>
@@ -55,6 +57,7 @@ bool prevs1, prevs2; // stores previous states of buttons
 bool first = true; // makes sure to print "DISCONNECTED" only once
 bool first2; // for creating files
 bool first3 = true; // for disconnected when pos not accurate
+bool turnA, turnB; // decides if red LED should turn on (A is for position error, B is for file error) (true = on, false = off)
 
 // setup
 void setup(void){
@@ -105,7 +108,7 @@ void loop(void){
     if (trackingState == 0){
         f.close();
         digitalWrite(LEDPIN, LOW);
-        digitalWrite(ERRPIN, LOW); // turns off bc not tracking
+        digitalWrite(ERRPIN, LOW); // turns off bc not tracking or writing anything
     }
     // if currently tracking, log file every 5 seconds and turn on LED
     if (trackingState == 1){
@@ -137,15 +140,17 @@ void loop(void){
 
         if (getCurPos()){
             first3 = true;
-            digitalWrite(ERRPIN, LOW); // turn off red LED if location is valid
+            turnA = false; // turn off red LED if location is valid
             writeToFile(10);
         } else{
             if (first3){
                 writeToFile(30); // write DISCONNECTED if not valid
                 first3 = false;
             }
-            digitalWrite(ERRPIN, HIGH); // if location is not valid, turn on red LED
+            turnA = true; // if location is not valid, turn on red LED
         }
+
+        digitalWrite(ERRPIN, (turnA || turnB)); // turn on LED if position has error OR file has error
     }
     // if currently paused, blink the LED every second
     if (trackingState == 2){
@@ -154,7 +159,7 @@ void loop(void){
         } else{
             digitalWrite(LEDPIN, LOW);  
         } 
-        digitalWrite(ERRPIN, LOW); // turns off bc not tracking
+        digitalWrite(ERRPIN, turnB); // turns LED to state of file
     }
 
     // get current min and sec from GPS and speed
@@ -188,7 +193,7 @@ void loop(void){
     while (!ss.available()){
         // first, try to reconnect
         startMillis = millis();
-        while (millis()-startMillis < SMDELAYTIME){
+        while ((millis()-startMillis) < (SMDELAYTIME+1000)){
             // if it reconnects, then break if not continue
             if (ss.available()) break;
             readButtons();
@@ -368,7 +373,7 @@ void writeToFile(byte code){
     // open file, only write to the file if the time is valid
     f = SD.open(fileName, FILE_WRITE);
     if (f && fileName != "INVALID") {
-        pinMode(ERRPIN, LOW); // turn error LED off
+        turnB = false; // turn error LED off
         // if file is initialized, then write and close
         if (code == 10){
             f.print(latitude);
@@ -384,7 +389,7 @@ void writeToFile(byte code){
         f.close();
     } else{
         // otherwise print error
-        pinMode(ERRPIN, HIGH); // toggle error LED
+        turnB = true; // toggle error LED
         Serial.print("Error opening file: ");  
         Serial.println(fileName); 
     }
