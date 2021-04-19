@@ -13,12 +13,13 @@
 #define BUTTON1 7
 #define BUTTON2 8
 #define POT A1
+#define CHIPSELECT 10 // cs pin
 
 // Width and height of LCD
 #define WID 16 
 #define HEI 2
 
-#define SMDELAYTIME 500 // total delay = SMDELAYTIME + 1 sec
+#define SMDELAYTIME 1000 // total delay = SMDELAYTIME + 1 sec
 
 // include
 #include <LiquidCrystal_I2C.h>
@@ -33,28 +34,27 @@
 LiquidCrystal_I2C lcd(0x27, WID, HEI);
 SoftwareSerial ss(RX, TX);
 TinyGPSPlus gps;
-File f;
 
 // for adjusting to my time zone
 TimeChangeRule usPST = {"PST", First, Sun, Nov, 2, -480}; // pacific standard time (winter) UTC-8
 TimeChangeRule usPDT = {"PDT", Second, Sun, Mar, 2, -420}; // pacific daylight time (summer) UTC-7
 Timezone usPacific(usPDT, usPST); // time offset will not be constant bc of daylight savings
-time_t pacific;
+time_t pacific; // time object
 
 byte unit; // 0 = mph, 1 = kph, 2 = m/s
-const char units[3][4] = {"mph", "kph", "m/s"}; // stores string of unit at the corresponding index, takes less emory
+const char units[3][4] = {"mph", "kph", "m/s"}; // stores string of unit at the corresponding index, takes less memory
 byte curhr, curmin; // cur hour and min to get from GPS
 byte trackingState; // 0 = not tracking, 1 = tracking, 2 = paused
-String fileName; // current file name
 unsigned long startMillis; // startMillis to track seconds
 
 float speedmph, speedkph, speedmps; // stores speed
-// stores current position
-float latitude, longitude; 
- 
+float latitude, longitude; // stores current position
+int y; // stores year
+byte mo, d, h, m, s; // stores date and time
+
 bool state1, state2; // variables for 1st and 2nd button states respectively
 bool prevs1, prevs2; // stores previous states of buttons
-bool first = true; // makes sure to print "DISCONNECTED" only once
+bool first = true; // makes sure to print "DISCONNECTED" only once when ss not available
 bool first2; // for creating files
 bool first3 = true; // for disconnected when pos not accurate
 bool turnA, turnB; // decides if red LED should turn on (A is for position error, B is for file error) (true = on, false = off)
@@ -80,6 +80,11 @@ void setup(void){
 
     // initialize millis
     startMillis = millis();
+
+    //initialize SD
+    if (!SD.begin(CHIPSELECT)){
+        turnB = true; 
+    }
 }
 
 // loop
@@ -87,26 +92,10 @@ void loop(void){
     readButtons(); // read states of buttons
     
     first = true;
-    
-    // if first button pressed, change the tracking state to start if stopped and to stop if started
-    if (prevs1 == LOW and state1 == HIGH){
-        trackingState = !trackingState;
-    }
-
-    // if second button pressed, change the tracking state to paused if not paused and to resume if paused 
-    if (prevs2 == LOW and state2 == HIGH and trackingState != 0){
-        trackingState = !(trackingState-1) + 1;
-
-        // if paused, write pause on file
-        if (trackingState == 2){
-            getCurPos();
-            writeToFile(20);  
-        }
-    }
 
     // turn off LED if not tracking
     if (trackingState == 0){
-        f.close();
+        first3 = true;
         digitalWrite(LEDPIN, LOW);
         digitalWrite(ERRPIN, LOW); // turns off bc not tracking or writing anything
     }
@@ -117,25 +106,10 @@ void loop(void){
         if(first2){
             first2 = false;
           
-            byte _h, _m, _s, _mth, _d;
-            int _y;
-            if (getCurTime(_h, _m, _s, _y, _mth, _d)){
-                // if time is valid then set the filename to the start date and time
-                fileName = "";
-                fileName += String(_y) ;
-                fileName += "-";
-                fileName += String(_mth);
-                fileName += "-";
-                fileName += String(_d);
-                fileName += " ";
-                fileName += String(_h);
-                fileName += ":";
-                fileName += String(_m);
-                fileName += ":";
-                fileName += String(_s);
-            } else {
-                fileName = "INVALID";  
-            }
+            if (getCurTime()){
+                // if time is valid then print to file the start date and time
+                writeToFile(40);
+            } 
         }
 
         if (getCurPos()){
@@ -150,40 +124,40 @@ void loop(void){
             turnA = true; // if location is not valid, turn on red LED
         }
 
-        digitalWrite(ERRPIN, (turnA || turnB)); // turn on LED if position has error OR file has error
+        digitalWrite(ERRPIN, turnB); // turn on LED if position has error OR file has error (CHANGE BACK)
     }
     // if currently paused, blink the LED every second
     if (trackingState == 2){
+        first3 = true;
         if ((millis()%2000) < 1000){
             digitalWrite(LEDPIN, HIGH);
         } else{
             digitalWrite(LEDPIN, LOW);  
         } 
-        digitalWrite(ERRPIN, turnB); // turns LED to state of file
+        digitalWrite(ERRPIN, (turnA || turnB)); // turns LED to state of file
     }
 
-    // get current min and sec from GPS and speed
-    byte t1, t3, t4;
-    int t2;
-    byte mult = 1;
-    if(!getCurTime(curhr, curmin, t1, t2, t3, t4)){
+    // get current min and sec from GPS
+    byte mult = 1; // used to determine which of speed or time has error
+    if(!getCurTime()){
         mult *= 2;
     }
 
-    if (!getCurSpeed(speedmph, speedkph, speedmps)){
+    // get cur speed from GPS
+    if (!getCurSpeed()){
         mult *= 3;  
-    }
+    } 
 
     // display those onto LCD
     switch(unit){
         case 0:
-            updateDisplay(true, curhr, curmin, mult, speedmph, t3, t4);
+            updateDisplay(true, mult, speedmph);
             break;
         case 1:
-            updateDisplay(true, curhr, curmin, mult, speedkph, t3, t4);
+            updateDisplay(true, mult, speedkph);
             break;
         case 2:
-            updateDisplay(true, curhr, curmin, mult, speedmps, t3, t4);
+            updateDisplay(true, mult, speedmps);
             break;
     }
 
@@ -208,11 +182,12 @@ void loop(void){
         if (first){
             lcd.clear();
             if (trackingState == 1){
+                // write DISCONNECTED to file
                 writeToFile(30);  
             }
             first = false;
         }
-        updateDisplay(false, 0, 0, 0, 0.0, 0, 0);
+        updateDisplay(false, 0, 0);
     }
 }
 
@@ -248,7 +223,7 @@ void readButtons(void){
         
         if (trackingState == 2){
             getCurPos();
-            writeToFile( 20);  
+            writeToFile(20);  
         } else{
             digitalWrite(LEDPIN, HIGH);  
         }
@@ -289,11 +264,11 @@ static void smartDelay(uint16_t ms) // I am only delaying for at most 10000 ms
 }
 
 // get current speed
-bool getCurSpeed(float& _mph, float& _kph, float& _mps){
+bool getCurSpeed(void){
     if (ss.available() && gps.speed.isValid()){
-        _mph = (float) gps.speed.mph();
-        _kph = (float) gps.speed.kmph();
-        _mps = (float) gps.speed.mps();
+        speedmph = (float) gps.speed.mph();
+        speedkph = (float) gps.speed.kmph();
+        speedmps = (float) gps.speed.mps();
         
 //        Serial.print("sp ");
 //        Serial.print(_mph);
@@ -309,7 +284,7 @@ bool getCurSpeed(float& _mph, float& _kph, float& _mps){
 }
 
 // get current time
-bool getCurTime(byte& _h, byte& _m, byte& _s, int& _y, byte& _mth, byte& _d){
+bool getCurTime(void){
     if (ss.available() && gps.date.isValid() && gps.time.isValid()){
         byte __h, __m, __s, __mth, __d;
         int __y;
@@ -324,29 +299,29 @@ bool getCurTime(byte& _h, byte& _m, byte& _s, int& _y, byte& _mth, byte& _d){
         time_t _t = now();
         pacific = usPacific.toLocal(_t); // update time if it was accurate
 
-        _h = hour(pacific);
-        _m = minute(pacific);
-        _s = second(pacific);
-        _y = year(pacific);
-        _mth = month(pacific);
-        _d = day(pacific);
+        h = (byte) hour(pacific);
+        m = (byte) minute(pacific);
+        s = (byte) second(pacific);
+        y = year(pacific);
+        mo = (byte) month(pacific);
+        d = (byte) day(pacific);
         
 //        Serial.print("t ");
-//        Serial.print(_y);
+//        Serial.print(y);
 //        Serial.print("-");
-//        Serial.print(_mth);
+//        Serial.print(mo);
 //        Serial.print("-");
-//        Serial.print(_d);  
+//        Serial.print(d);  
 //        Serial.print(" ");
-//        Serial.print(_h);
+//        Serial.print(h);
 //        Serial.print(":");
-//        Serial.print(_m); 
+//        Serial.print(m); 
 //        Serial.print(":");
-//        Serial.println(_s);
+//        Serial.println(s);
         
         return true;
     }
-    return false;
+    return false; 
 }
 
 // get current position
@@ -365,38 +340,53 @@ bool getCurPos(void){
     }
     return false;
 } 
-
 // writes cur position to file
 void writeToFile(byte code){
-    // codes: 10 = write cur pos, 20 = write pause, 30 = write disconnected
+    // codes: 10 = write cur pos, 20 = write pause, 30 = write disconnected, 40 = write date time
   
     // open file, only write to the file if the time is valid
-    f = SD.open(fileName, FILE_WRITE);
-    if (f && fileName != "INVALID") {
+    File f = SD.open("course.txt", FILE_WRITE);
+    if (f) {
         turnB = false; // turn error LED off
         // if file is initialized, then write and close
-        if (code == 10){
-            f.print(latitude);
-            f.print(",");
-            f.println(longitude);
-        } 
-        else if (code == 20){
-            f.println("PAUSE");  
+        switch (code){
+          case 10:
+              f.print(latitude, 6);
+              f.print(",");
+              f.println(longitude, 6);
+              break;
+          case 20:
+              f.println("PAUSE");  
+              break;
+          case 30:
+              f.println("DISCONNECTED");
+              break;
+          case 40:
+              f.print("T ");
+              f.print(y);
+              f.print("-");
+              f.print(mo);
+              f.print("-");
+              f.print(d);
+              f.print(" ");
+              f.print(h);
+              f.print(":");
+              f.print(m);
+              f.print(":");
+              f.print(s);
+              f.println();
+              break;
         }
-        else if (code == 30){
-            f.println("DISCONNECTED");
-        }
-        f.close();
+        f.close(); // close file
     } else{
         // otherwise print error
         turnB = true; // toggle error LED
-        Serial.print("Error opening file: ");  
-        Serial.println(fileName); 
+        Serial.println("Error opening file");  
     }
 }
 
 // prints data onto LCD
-void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, byte _d){
+void updateDisplay(bool _av, int _b, float _curspeed){
     // (hour, minute, code, speed) 
     // if _b == 3, curspeed has an error
     // if _b == 2, time has an error
@@ -416,12 +406,12 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
     if (_b != 2 && _b != 6){
         // print date
         lcd.setCursor(0, 0);
-        if (calcLen(_mo) == 1){ // add 0 in front if month is single digit
+        if (calcLen(mo) == 1){ // add 0 in front if month is single digit
             lcd.print('0');
             lcd.setCursor(1, 0);
-            lcd.print(_mo);
+            lcd.print(mo);
         } else{
-            lcd.print(_mo);  
+            lcd.print(mo);  
         }
 
         // print dash
@@ -429,12 +419,12 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
         lcd.print('-');
         lcd.setCursor(3, 0);
         
-        if (calcLen(_d) == 1){ // add 0 in front if day is single digit
+        if (calcLen(d) == 1){ // add 0 in front if day is single digit
             lcd.print('0');
             lcd.setCursor(4, 0);
-            lcd.print(_d);
+            lcd.print(d);
         } else{
-            lcd.print(_d);  
+            lcd.print(d);  
         }
 
         // print spaces
@@ -446,12 +436,12 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
 
         // print time
         lcd.setCursor(WID-5, 0);
-        if (calcLen(_h) == 1){ // add 0 in front if hour is single digit
+        if (calcLen(h) == 1){ // add 0 in front if hour is single digit
             lcd.print('0');
             lcd.setCursor(WID-4, 0);
-            lcd.print(_h);  
+            lcd.print(h);  
         } else{
-            lcd.print(_h);  
+            lcd.print(h);  
         }
 
         // print time colon
@@ -459,12 +449,12 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
         lcd.print(':');
         lcd.setCursor(WID-2, 0);
 
-        if (calcLen(_m) == 1){ // add 0 in front if min is single digit
+        if (calcLen(m) == 1){ // add 0 in front if min is single digit
             lcd.print('0');
             lcd.setCursor(WID-1, 0);
-            lcd.print(_m);
+            lcd.print(m);
         } else{
-            lcd.print(_m);  
+            lcd.print(m);  
         }
     } else{ // if not valid, print "NO INFO"
         lcd.setCursor(0, 0);
@@ -486,7 +476,7 @@ void updateDisplay(bool _av, int _h, int _m, int _b, float _curspeed, byte _mo, 
 
 }
 
-// calculates # digits of speed when floored
+// calculates number of digits of a given number
 byte calcLen(int a){
     if (a == 0) return 1;
     
