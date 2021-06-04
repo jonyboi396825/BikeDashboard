@@ -124,7 +124,7 @@ void loop(void){
             turnA = true; // if location is not valid, turn on red LED
         }
 
-        digitalWrite(ERRPIN, turnB); // turn on LED if position has error OR file has error (CHANGE BACK)
+        digitalWrite(ERRPIN, (turnA || turnB)); // turn on LED if position has error OR file has error 
     }
     // if currently paused, blink the LED every second
     if (trackingState == 2){
